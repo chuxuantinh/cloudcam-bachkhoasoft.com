@@ -1,0 +1,69 @@
+# binary
+/vendor/.built_*
+/vendor/.extracted_libcurl
+/vendor/curl-*
+/vendor/mbedtls_lib
+/vendor/.cloned_iot_client
+/vendor/.extracted_mbedtls
+/vendor/aws_iot_client
+/vendor/libaws-iot.a
+
+__pycache__
+
+# axis files
+.eap-install.cfg
+.target-makefrag
+*.var_log_messages.txt
+*.var_log_messages.old
+*.eap
+*.eap.old
+package.conf.orig
+Axis.vmwarevm
+Axis-ACAP
+
+# cloudcam certs
+certs/2dd9c753bf-certificate.pem.crt
+certs/2dd9c753bf-private.pem.key
+certs/*.key
+certs/verificationCert.*
+
+# Object files
+*.o
+*.ko
+*.obj
+*.elf
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Libraries
+*.lib
+*.a
+*.la
+*.lo
+
+# Shared objects (inc. Windows DLLs)
+*.dll
+*.so
+*.so.*
+*.dylib
+
+# Executables
+*.exe
+*.out
+*.app
+*.i*86
+*.x86_64
+*.hex
+
+# Debug files
+*.dSYM/
+
+# serverless
+/.serverless
+node_modules
+
+/bin/*
+vendor/.extracted*
+vendor/jansson*

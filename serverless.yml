@@ -1,0 +1,186 @@
+service: cloudcam
+
+plugins:
+  - serverless-python-requirements
+  - serverless-pseudo-parameters
+  - serverless-stack-output
+  - serverless-iam-roles-per-function
+custom:
+  cloudcam:
+    s3_thumb_bucket_name: '#{AWS::StackName}-thumbs'
+    janus:
+      hosted_zone_domain: cloudcamdev.int80.biz
+      hosted_zone_id: Z28O6A5M6DDPL6
+      instance_name_prefix: '#{AWS::StackName}-stream'
+    ui_bucket_name: '#{AWS::StackName}-ui'
+    defaultLambdaMemorySize: 256
+  output:
+    file: ui/src/aws-stack.json
+  pythonRequirements:
+    dockerizePip: false
+    slim: true
+    useDownloadCache: true
+    useStaticCache: true
+    # noDeploy:
+    #   - boto3
+    #   - botocore
+    #   - docutils
+
+  # customDomain:
+    # domainName: cloudcam.io
+    # stage: ${self:provider.stage}
+    # createRoute53Record: true
+
+
+provider:
+  name: aws
+  runtime: python3.6
+  stage: ${opt:stage, 'dev'}
+  # profile: default
+  region: eu-central-1
+  variableSyntax: "\\${((?!(iot)|(AWS))[ ~:a-zA-Z0-9._@'\",\\-\\/\\(\\)]+?)}"
+
+  iamRoleStatements:
+    - Effect: Allow
+      Action: secretsmanager:GetSecretValue
+      Resource: "arn:aws:secretsmanager:#{AWS::Region}:#{AWS::AccountId}:secret:myservice/*"
+
+package:
+  include:
+    - cloudcam/**
+    - '!**/__pycache__/**'
+  exclude:
+    - '**'
+    - node_modules/**
+    - venv/**
+    - '**/__pycache__/**'
+    - ".#*"
+
+functions:
+  IoTListThings:
+    memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+    timeout: 10
+    handler: cloudcam.iot_list_things.handler
+    events:
+      - http: GET /list_things
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - iot:ListPrincipalThings
+        Resource: '*'
+
+  IoTProvisionThing:
+    handler: cloudcam/iot_provision_thing.handler
+    timeout: 10
+    memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+    environment:
+       CAMERA_IOT_POLICY_NAME: !Ref CameraIoTPolicy
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - iot:DescribeEndpoint
+          - iot:AttachPolicy
+          - iot:CreateThing
+          - iot:CreateKeysAndCertificate
+          - iot:AttachThingPrincipal
+          - iot:DetachPolicy
+          - iot:CreatePolicy
+          - iot:DeletePolicy
+        Resource: '*'
+
+  # unused - should delete
+  IoTAttachCameraPolicy:
+    memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+    handler: cloudcam/iot_attach_camera_policy.handler
+    environment:
+       CAMERA_IOT_POLICY_NAME: !Ref CameraIoTPolicy
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - iot:DescribeEndpoint
+          - iot:AttachPolicy
+          - iot:UpdateThing
+        Resource: '*'
+
+  # unused - should delete
+  IoTAttachUserPolicy:
+    memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+    handler: cloudcam/iot_attach_user_policy.handler
+    environment:
+       USER_IOT_POLICY_NAME: !Ref UserIoTPolicy
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - iot:AttachPolicy
+        Resource: '*'
+
+  CognitoPresignup:
+    handler: cloudcam/cognito_presignup.handler
+    memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+    environment:
+       USER_IOT_POLICY_NAME: !Ref UserIoTPolicy
+    iamRoleStatements:
+      - Effect: Allow
+        Action:
+          - iot:AttachPolicy
+        Resource: '*'
+
+  ThumbStore:
+    handler: cloudcam/iot_request_thumb.handler
+    timeout: 10
+    environment:
+      S3_THUMB_BUCKET_NAME: ${self:custom.cloudcam.s3_thumb_bucket_name}
+    events:
+      - iot:
+        name: ThumbStoreEvent
+        sql: "SELECT * FROM 'cloudcam/thumb/request/*'"
+      - iot:
+        name: ThumbStoreConnectedEvent
+        sql: "SELECT * FROM '$aws/events/presence/connected/#'"
+    iamRoleStatements:
+      - Action:
+        - s3:GetObject
+        - s3:PutObject
+        Effect: Allow
+        Resource: !Sub 'arn:aws:s3:::#{ThumbBucket}/*'
+      - Effect: Allow
+        Action:
+          - iot:Publish
+          - iot:Connect
+          - iot:UpdateThingShadow
+        Resource:
+          - '*'
+
+# JanusStartStream:
+#   role: !GetAtt [JanusStartStreamLambdaRole, Arn]
+#   handler: cloudcam/janus_start_stream.handler
+#   timeout: 10
+#   memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+#   environment:
+#     JANUS_HOSTED_ZONE_DOMAIN: ${self:custom.cloudcam.janus.hosted_zone_domain}
+#     JANUS_INSTANCE_NAME_PREFIX: ${self:custom.cloudcam.janus.instance_name_prefix}
+# JanusStopStream:
+#   role: !GetAtt [JanusStopStreamLambdaRole, Arn]
+#   handler: cloudcam/janus_stop_stream.handler
+#   timeout: 10
+#   memorySize: ${self:custom.cloudcam.defaultLambdaMemorySize}
+
+# JanusScaleLightsail:
+#   role: !GetAtt [JanusScaleLightsailLambdaRole, Arn]
+#   name: ${self:provider.stage}-janus_scale_lightsail
+#   handler: cloudcam/janus_scale_lightsail.handler
+#   timeout: 300
+#   environment:
+#     LIGHTSAIL_AZS: !Ref LightsailAzs
+#     LIGHTSAIL_BLUEPRINT_ID: !Ref LightsailBlueprintId
+#     LIGHTSAIL_BUNDLE_ID: !Ref LightsailBundleId
+#     LIGHTSAIL_JANUS_IMAGE: !Ref LightsailJanusImage
+#     JANUS_HOSTED_ZONE_ID: ${self:custom.cloudcam.janus.hosted_zone_id}
+#     JANUS_HOSTED_ZONE_DOMAIN: ${self:custom.cloudcam.janus.hosted_zone_domain}
+#     JANUS_INSTANCE_NAME_PREFIX: ${self:custom.cloudcam.janus.instance_name_prefix}
+
+resources:
+  - ${file(cloudformation/iot.yml)}
+  - ${file(cloudformation/s3.yml)}
+  - ${file(cloudformation/cognito.yml)}
+  - ${file(cloudformation/outputs.yml)}
